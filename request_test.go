@@ -3,35 +3,38 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"math/rand"
+	"net/http"
+	"sync"
 	"testing"
-	"time"
-	"verif_net_work/pool"
 )
 
-var reqPool *pool.ConnectionPool
-
-func TestSlice(t *testing.T) {
-	reqPool = pool.NewConnectionPool()
-	for i := 0; i < 1000; i++ {
-		go func() {
-			GetReq()
-		}()
-	}
-	time.Sleep(60 * time.Second)
+func TestReq(t *testing.T) {
+	GetReq()
 }
 
 func GetReq() {
-	random := rand.Int()
-	url := fmt.Sprintf("http://127.0.0.1:5536/Api/GetTrueResult?random=%d", random)
-	p := pools.GetConnection()
-	defer pools.PutConnection(p)
-	resp, err := p.Get(url)
-	if err != nil {
-		return
+	var wg sync.WaitGroup
+
+	for i := 1; i <= 100; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			resp, err := http.Get("http://localhost:5536/Api/GetTrueResult?random=" + fmt.Sprintf("%d", i))
+			if err != nil {
+				fmt.Println("请求失败:", err)
+				return
+			}
+			defer resp.Body.Close()
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println("读取响应内容失败:", err)
+				return
+			}
+
+			fmt.Println(string(body))
+		}(i)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
-	responseString := string(body)
-	fmt.Println("请求头：", random, "响应体:", responseString)
+
+	wg.Wait()
 
 }

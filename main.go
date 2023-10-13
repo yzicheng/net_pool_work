@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"time"
@@ -9,11 +10,11 @@ import (
 )
 
 var pools *pool.ConnectionPool
-var reqChan chan int
+var leakyChan chan int
 
 func init() {
 	pools = pool.NewConnectionPool()
-	reqChan = make(chan int, 50)
+	leakyChan = make(chan int, 20)
 	gin.SetMode(gin.ReleaseMode)
 }
 
@@ -27,14 +28,24 @@ func main() {
 }
 
 func getTrueResult(ctx *gin.Context) {
-
 	respChan := make(chan string)
+	reqChan := make(chan int)
+	// 占用leakyChan一个位置，如果超过容量阻塞
+	fmt.Println(len(leakyChan))
+	leakyChan <- 1
+
+	defer func() {
+		// 结束时把位置还回去
+		<-leakyChan
+		fmt.Println(len(leakyChan))
+	}()
+
 	go func() {
 		// 同步等待请求
 		<-reqChan
 
 		// 异步调用第三方接口
-		time.Sleep(20 * time.Second) // 模拟接口调用耗时
+		time.Sleep(5 * time.Second) // 模拟接口调用耗时
 		resp := ctx.DefaultQuery("random", "0") + "调用成功"
 
 		// 将结果发送到通道
@@ -43,7 +54,7 @@ func getTrueResult(ctx *gin.Context) {
 
 	// 发送请求到通道
 	reqChan <- 1
-	ctxTimeOut, cancel := context.WithTimeout(ctx, 100*time.Second)
+	ctxTimeOut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	for {
 		select {
